@@ -182,20 +182,24 @@ if ( ! class_exists( 'um\core\Permalinks' ) ) {
 				$user_id = absint( $_REQUEST['user_id'] );
 				delete_option( "um_cache_userdata_{$user_id}" );
 
-				um_fetch_user( $user_id );
-
-				if ( strtolower( $_REQUEST['hash'] ) !== strtolower( um_user( 'account_secret_hash' ) ) ) {
+				$account_secret_hash = (string) get_user_meta( $user_id, 'account_secret_hash', true );
+				if ( strtolower( $_REQUEST['hash'] ) !== strtolower( $account_secret_hash ) ) {
 					wp_die( __( 'This activation link is expired or have already been used.', 'ultimate-member' ) );
 				}
 
+				// Approve
+				um_fetch_user( $user_id );
 				UM()->user()->approve();
-				$redirect = ( um_user( 'url_email_activate' ) ) ? um_user( 'url_email_activate' ) : um_get_core_page( 'login', 'account_active' );
-				$login    = (bool) um_user( 'login_email_activate' );
+				um_reset_user();
 
-				// log in automatically
+				// Get user role data
+				$user_role = UM()->roles()->get_editable_priority_user_role( $user_id );
+				$user_role_data = UM()->roles()->role_data( $user_role );
+
+				// Log in automatically
+				$login = !empty( $user_role_data['login_email_activate'] ); // Role setting "Login user after validating the activation link?"
 				if ( ! is_user_logged_in() && $login ) {
 					$user = get_userdata( $user_id );
-					$user_id = $user->ID;
 
 					// update wp user
 					wp_set_current_user( $user_id, $user->user_login );
@@ -206,7 +210,6 @@ if ( ! class_exists( 'um\core\Permalinks' ) ) {
 					ob_end_clean();
 				}
 
-				um_reset_user();
 				/**
 				 * UM hook
 				 *
@@ -228,6 +231,11 @@ if ( ! class_exists( 'um\core\Permalinks' ) ) {
 				 */
 				do_action( 'um_after_email_confirmation', $user_id );
 
+				// Redirect				
+				$redirect = empty( $user_role_data['url_email_activate'] ) ? um_get_core_page( 'login', 'account_active' ) : trim( $user_role_data['url_email_activate'] ); // Role setting "URL redirect after e-mail activation"
+				if ( $login ) {
+					$redirect = add_query_arg( 't', time(), $redirect ); // Avoid caching issue
+				}
 				exit( wp_redirect( $redirect ) );
 
 			}
